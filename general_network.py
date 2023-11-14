@@ -3,17 +3,22 @@
 """
 
 import torch
-import os
-import json 
-import numpy as np
-import matplotlib.pyplot as plt
-
 from typing import List, Tuple
-from matplotlib.animation import FuncAnimation
-from lava.lib.dl.slayer.neuron import rf  # Resonate and Fire
-from SNN_visualizer import SNN_visualizer
+import os
+import json
 from datetime import datetime
 from tqdm import tqdm
+
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+from SNN_visualizer import SNN_visualizer
+
+curfolder=os.getcwd()
+os.chdir(r'E:\Promotion\NeuroTUM_hackathon\lava-dl-main\src')
+from lava.lib.dl.slayer.neuron import rf  # Resonate and Fire
+os.chdir(curfolder)
+
 
 
 class RfNeuron(rf.Neuron):
@@ -140,42 +145,42 @@ class Network:
             N = N_time*N_batches
             
             real1_out = self.layer_data_reals[i] # [B, N, t]
-            real2_out = self.layer_data_reals[i+1] # [B, N, t]
+            real2_out = self.layer_data_reals[i+1] # [B, M, t]
             imag1_out = self.layer_data_imags[i] # [B, N, t]
-            imag2_out = self.layer_data_imags[i+1] # [B, N, t]
+            imag2_out = self.layer_data_imags[i+1] # [B, M, t]
             
-            real1_real2= beta[0]*np.tensordot(real1_out, real2_out, axes=([0,2],[0,2]))/N 
-            real1_imag2= beta[1]*np.tensordot(real1_out, imag2_out, axes=([0,2],[0,2]))/N
-            imag1_real2= beta[2]*np.tensordot(imag1_out, real2_out, axes=([0,2],[0,2]))/N
-            imag1_imag2= beta[3]*np.tensordot(imag1_out, imag2_out, axes=([0,2],[0,2]))/N
+            real1_real2= beta[0]*np.tensordot(real1_out, real2_out, axes=([0,2],[0,2]))/N  #[N,M]
+            real1_imag2= beta[1]*np.tensordot(real1_out, imag2_out, axes=([0,2],[0,2]))/N  #[N,M]
+            imag1_real2= beta[2]*np.tensordot(imag1_out, real2_out, axes=([0,2],[0,2]))/N  #[N,M]
+            imag1_imag2= beta[3]*np.tensordot(imag1_out, imag2_out, axes=([0,2],[0,2]))/N  #[N,M]
             
             S[0] = (1-b)*S[0] + real1_real2        
             S[1] = (1-b)*S[1] + real1_imag2
             S[2] = (1-b)*S[2] + imag1_real2
             S[3] = (1-b)*S[3] + imag1_imag2
 
-def store_hyperparams(network: Network, dir):
+def store_hyperparams(network: Network, folder):
     hyperparams = {'b': b, 'beta': beta.tolist(), 'threshold': threshold, 'decay': decay, 'period': period}
     
-    with open(f'{dir}/hyperparams.json', 'w') as file:
+    with open(f'{folder}/hyperparams.json', 'w') as file:
         json.dump(hyperparams, file)
 
-def store(network: Network, spike_input, dir):
-    store_hyperparams(network, dir)
+def store(network: Network, spike_input, folder):
+    store_hyperparams(network, folder)
     
-    np.save(f'{dir}/spike_input.npy', np.array(spike_input))
+    np.save(f'{folder}/spike_input.npy', np.array(spike_input))
     
     for i in range(len(network.layers)):
         layername = f'layer{i}_neurons{network.layer_sizes[i]}_'
         
-        np.save(f'{dir}/{layername}_reals.npy',network.layer_data_reals[i])
-        np.save(f'{dir}/{layername}_imags.npy',network.layer_data_imags[i])
-        np.save(f'{dir}/{layername}_spikes.npy',network.layer_data_spikes[i])
+        np.save(f'{folder}/{layername}_reals.npy',network.layer_data_reals[i])
+        np.save(f'{folder}/{layername}_imags.npy',network.layer_data_imags[i])
+        np.save(f'{folder}/{layername}_spikes.npy',network.layer_data_spikes[i])
         if i != len(network.layers) - 1:
-            np.save(f'{dir}/{layername}_weights.npy', network.weights[i])
+            np.save(f'{folder}/{layername}_weights.npy', network.weights[i])
     
 
-def plot_time_trace(dir, network, layers=[0], neurons=[0], title_prefix=''):
+def plot_time_trace(folder, network, layers=[0], neurons=[0], title_prefix=''):
     fig = plt.figure(figsize=(16, 10), label=title_prefix)
     N_subplots=len(neurons)
     axes=[]
@@ -203,7 +208,7 @@ def plot_time_trace(dir, network, layers=[0], neurons=[0], title_prefix=''):
     hyperparams = {'b': b, 'beta': beta.tolist(), 'threshold': threshold, 'decay': decay, 'period': period}
     
     figname = '_'.join(str(key) + '-' + str(value) for key, value in hyperparams.items()) 
-    fig.savefig(f'{dir}/{title_prefix}_{figname}.png')
+    fig.savefig(f'{folder}/{title_prefix}_{figname}.png')
 
 def get_train_input(device):
     time = torch.FloatTensor(np.arange(200)).to(device)
@@ -221,8 +226,6 @@ def get_train_input(device):
     # spike_input.data[..., np.arange(0,spike_input.shape[-1],period)] = 1
     
     ### Input from data
-    import os
-    os.chdir("pattern_recognition_resonators")
     input_data = np.load('datasets/2.5k-cleanedup.npy')[:200].reshape(1,1,-1)
     spike_input = torch.tensor(input_data).to(device)
     
@@ -289,12 +292,12 @@ def run_test_network(network: Network, spike_input: np.ndarray):
     network.forward(np.repeat(spike_input,repeats=network.layer_sizes[0], axis=1), np.repeat(spike_input,repeats=network.layer_sizes[0], axis=1))
 
 
-def visualize(dir, network: Network, spike_input: np.ndarray, layers=[0,0,0,0,0], neurons=[0,1,2,3,4], title=''):
+def visualize(folder, network: Network, spike_input: np.ndarray, layers=[0,0,0,0,0], neurons=[0,1,2,3,4], title=''):
     #####
     # Plot the output of selected neurons in selected layers
     #####
     
-    plot_time_trace(dir, network, layers=layers, neurons=neurons, title_prefix = title)
+    plot_time_trace(folder, network, layers=layers, neurons=neurons, title_prefix = title)
     
     #####
     # Visualize the spiking animation
@@ -305,9 +308,9 @@ def visualize(dir, network: Network, spike_input: np.ndarray, layers=[0,0,0,0,0]
         out.update(frame)
         out.time_slider.set_val(int(frame))
         
-    animationLive=FuncAnimation(out.fig, animateLive, frames=spike_input.shape[-1], interval=40)
+    globals()["animationLive " + title] = FuncAnimation(out.fig, animateLive, frames=spike_input.shape[-1], interval=40)
     print("Storing gifs...")
-    animationLive.save(f'{dir}/{title}_SNN_output.gif', fps=30, writer='ffmpeg') #saving gifs takes a lot of time
+    globals()["animationLive " + title].save(f'{folder}/{title}_SNN_output.gif', fps=30, writer='ffmpeg') #saving gifs takes a lot of time
     print("Storing gifs done")
     plt.show()
 
@@ -325,18 +328,20 @@ if __name__ == '__main__':
     
     run_learning_network(our_SNN, train_input, 2000)
     
-    ### create directory to save data from the current run
+    ### create folderectory to save data from the current run
     now = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
-    dir = f'output/{now}'
+    folder = f'output/{now}'
     
-    if not os.path.exists(dir):
-        os.makedirs(dir)
+    if not os.path.exists(folder):
+        os.makedirs(folder)
     
-    store(our_SNN, train_input, dir)
+    store(our_SNN, train_input, folder)
     
-    visualize(dir, our_SNN, train_input, layers=[3,3], neurons=[0,1], title='Train')
+    visualize(folder, our_SNN, train_input, layers=[3,3], neurons=[0,1], title='Train')
+    
     
     test_input = get_test_input(device)
     run_test_network(our_SNN, test_input)
 
-    visualize(dir, our_SNN, test_input, layers=[3,3], neurons=[0,1],  title='Test')
+    #visualize(folder, our_SNN, test_input, layers=[3,3], neurons=[0,1],  title='Test')
+    
